@@ -141,28 +141,40 @@ def _load_args(raw: str | None, path: str | None) -> dict:
 
 
 def main() -> int:
+    # Shared options use SUPPRESS defaults so they can be given before or after
+    # the subcommand without the subparser overwriting an earlier value.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--project", default=argparse.SUPPRESS,
+                        help="project id/prefix to target first")
+    common.add_argument("--save-images", default=argparse.SUPPRESS,
+                        help="directory for image result blocks")
+
     parser = argparse.ArgumentParser(description="ChatCut Desktop MCP stdio client")
     parser.add_argument("--shim", default=DEFAULT_SHIM)
-    parser.add_argument("--project", help="project id/prefix to target first")
-    parser.add_argument("--save-images", help="directory for image result blocks")
+    parser.add_argument("--project", default=None, help="project id/prefix to target first")
+    parser.add_argument("--save-images", default=None, help="directory for image result blocks")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    list_parser = sub.add_parser("list-tools", help="list tool names and descriptions")
+    list_parser = sub.add_parser("list-tools", help="list tool names and descriptions",
+                                 parents=[common])
     list_parser.add_argument("--filter", default="", help="substring filter")
 
-    schema_parser = sub.add_parser("schema", help="print one tool's input schema")
+    schema_parser = sub.add_parser("schema", help="print one tool's input schema",
+                                   parents=[common])
     schema_parser.add_argument("tool")
 
-    call_parser = sub.add_parser("call", help="call one tool")
+    call_parser = sub.add_parser("call", help="call one tool", parents=[common])
     call_parser.add_argument("tool")
     call_parser.add_argument("--json", help="arguments as JSON, or @path/to.json")
     call_parser.add_argument("--json-file", help="arguments loaded from a JSON file")
 
-    batch_parser = sub.add_parser("batch", help="run several tool calls in one session")
+    batch_parser = sub.add_parser("batch", help="run several tool calls in one session",
+                                  parents=[common])
     batch_parser.add_argument("file", help="JSON list, or {project, calls}")
 
     args = parser.parse_args()
-    project = args.project
+    project = getattr(args, "project", None)
+    save_images = getattr(args, "save_images", None)
 
     if args.command == "schema":
         client = ChatCut(args.shim)
@@ -197,8 +209,8 @@ def main() -> int:
         try:
             result = client.call(args.tool, _load_args(args.json, args.json_file))
             print(_text(result))
-            if args.save_images:
-                for path in _save_images(result, args.save_images, args.tool):
+            if save_images:
+                for path in _save_images(result, save_images, args.tool):
                     print(f"saved image: {path}", file=sys.stderr)
         finally:
             client.close()
@@ -219,8 +231,8 @@ def main() -> int:
             result = client.call(tool, entry.get("args", {}))
             print(f"=== [{index}] {tool} ===")
             print(_text(result))
-            if args.save_images:
-                for path in _save_images(result, args.save_images, f"{index}_{tool}"):
+            if save_images:
+                for path in _save_images(result, save_images, f"{index}_{tool}"):
                     print(f"saved image: {path}", file=sys.stderr)
     finally:
         client.close()
